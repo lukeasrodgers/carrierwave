@@ -13,6 +13,7 @@ module CarrierWave
     #
     # [:fog_attributes]                   (optional) additional attributes to set on files
     # [:fog_public]                       (optional) public readability, defaults to true
+    # [:fog_skip_aws_acl]                 (optional) skip setting ACL, defaults to false
     # [:fog_authenticated_url_expiration] (optional) time (in seconds) that authenticated urls
     #   will be valid, when fog_public is false and provider is AWS or Google, defaults to 600
     # [:fog_use_ssl_for_aws]              (optional) #public_url will use https for the AWS generated URL]
@@ -310,12 +311,13 @@ module CarrierWave
           else
             fog_file = new_file.to_file
             @content_type ||= new_file.content_type
-            @file = directory.files.create({
+            opts = {
               :body         => (fog_file ? fog_file : new_file).read,
               :content_type => @content_type,
               :key          => path,
-              :public       => @uploader.fog_public
-            }.merge(@uploader.fog_attributes))
+            }
+            opts.merge!(:public => @uploader.fog_public) unless @uploader.fog_skip_aws_acl
+            @file = directory.files.create(opts.merge(@uploader.fog_attributes))
             fog_file.close if fog_file && !fog_file.closed?
           end
           true
@@ -434,10 +436,11 @@ module CarrierWave
         #
         def directory
           @directory ||= begin
-            connection.directories.new(
-              :key    => @uploader.fog_directory,
-              :public => @uploader.fog_public
-            )
+            opts = {
+              :key => @uploader.fog_directory,
+            }
+            opts.merge!(:public => @uploader.fog_public) unless @uploader.fog_skip_aws_acl
+            connection.directories.new(opts)
           end
         end
 
@@ -453,7 +456,11 @@ module CarrierWave
         end
 
         def acl_header
-          {'x-amz-acl' => @uploader.fog_public ? 'public-read' : 'private'}
+          if @uploader.fog_skip_aws_acl 
+            {}
+          else
+            {'x-amz-acl' => @uploader.fog_public ? 'public-read' : 'private'}
+          end
         end
       end
 
